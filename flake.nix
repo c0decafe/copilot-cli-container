@@ -88,7 +88,7 @@
           pkgs = pkgsFor system;
         in
         [
-          pkgs.bashNonInteractive
+          pkgs.bashInteractive
           (gitFor system)
           (opensshFor system)
           (dockerCliFor system)

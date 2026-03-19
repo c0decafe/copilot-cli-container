@@ -9,7 +9,7 @@ There is intentionally no `Dockerfile` here. The image is built directly with `n
 - The official `copilot-cli` release binary, pinned by version and hash
 - A tiny compiled TTY-aware entrypoint
 - A compact built-in operator toolset for container-only environments:
-  - BusyBox core utilities plus real `bash` compatibility for tools that require `/bin/bash`
+  - BusyBox core utilities plus real interactive `bash` support for tools that require `/bin/bash`
   - `git`
   - OpenSSH client tools (`ssh`, `scp`, `sftp`, `ssh-keyscan`, `ssh-keygen`)
   - `docker`
