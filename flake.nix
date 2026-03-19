@@ -88,6 +88,7 @@
           pkgs = pkgsFor system;
         in
         [
+          pkgs.bashNonInteractive
           (gitFor system)
           (opensshFor system)
           (dockerCliFor system)
@@ -259,10 +260,14 @@
               chmod 0777 ./workspace ./var/lib/copilot ./var/lib/copilot/.cache ./var/lib/copilot/.config
               chmod 0700 ./var/lib/copilot/.docker ./var/lib/copilot/.ssh
               cat > ./etc/passwd <<'EOF'
-              copilot:x:1000:1000:GitHub Copilot CLI:/var/lib/copilot:/bin/copilot
+              copilot:x:1000:1000:GitHub Copilot CLI:/var/lib/copilot:/bin/bash
               EOF
               cat > ./etc/group <<'EOF'
               copilot:x:1000:
+              EOF
+              cat > ./etc/shells <<'EOF'
+              /bin/bash
+              /bin/sh
               EOF
             '';
             fakeRootCommands = ''
@@ -277,7 +282,7 @@
                 "HOST_ROOT=/host"
                 "LD_LIBRARY_PATH=/lib"
                 "PATH=/bin"
-                "SHELL=/bin/sh"
+                "SHELL=/bin/bash"
                 "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "XDG_CACHE_HOME=/var/lib/copilot/.cache"

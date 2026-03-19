@@ -9,7 +9,7 @@ There is intentionally no `Dockerfile` here. The image is built directly with `n
 - The official `copilot-cli` release binary, pinned by version and hash
 - A tiny compiled TTY-aware entrypoint
 - A compact built-in operator toolset for container-only environments:
-  - BusyBox `sh` and core utilities
+  - BusyBox core utilities plus real `bash` compatibility for tools that require `/bin/bash`
   - `git`
   - OpenSSH client tools (`ssh`, `scp`, `sftp`, `ssh-keyscan`, `ssh-keygen`)
   - `docker`
@@ -59,6 +59,7 @@ docker run --rm ghcr.io/c0decafe/copilot-cli-container:latest copilot --version
 
 The image now ships the most useful day-2 tools directly so it can work in environments where you are only allowed to run containers:
 
+- `bash`
 - `sh`
 - `git`
 - `ssh`, `scp`, `sftp`, `ssh-keyscan`, `ssh-keygen`
@@ -74,7 +75,7 @@ Smoke test the bundled tools:
 
 ```bash
 docker run --rm ghcr.io/c0decafe/copilot-cli-container:latest \
-  sh -lc 'git --version && docker --version && ssh -V 2>&1 | head -n1 && curl --version | head -n1 && jq --version && ps --version | head -n1 && pgrep --version | head -n1 && ip -Version 2>&1 | head -n1 && ss -V 2>&1 | head -n1'
+  bash -lc 'bash --version | head -n1 && git --version && docker --version && ssh -V 2>&1 | head -n1 && curl --version | head -n1 && jq --version'
 ```
 
 If you want the built-in Docker CLI to talk to the host daemon, mount the socket:
