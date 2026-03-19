@@ -1,0 +1,74 @@
+name: publish-image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - name: Build image with Nix
+        run: nix --accept-flake-config build .#dockerImage
+
+      - name: Load image into Docker
+        run: docker load < result
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          {
+            echo "image=$image"
+            echo "sha_tag=$image:sha-${GITHUB_SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            echo "latest_tag=$image:latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tag image
+        shell: bash
+        run: |
+          docker tag copilot-cli:latest "${{ steps.meta.outputs.sha_tag }}"
+
+          if [ -n "${{ steps.meta.outputs.latest_tag }}" ]; then
+            docker tag copilot-cli:latest "${{ steps.meta.outputs.latest_tag }}"
+          fi
+
+      - name: Push image tags
+        shell: bash
+        run: |
+          docker push "${{ steps.meta.outputs.sha_tag }}"
+
+          if [ -n "${{ steps.meta.outputs.latest_tag }}" ]; then
+            docker push "${{ steps.meta.outputs.latest_tag }}"
+          fi
