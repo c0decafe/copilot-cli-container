@@ -37,6 +37,45 @@
               copilot-cli:latest "$@"
           '')
         ];
+      hostHelpersFor =
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        pkgs.runCommand "copilot-host-helpers" { } ''
+          mkdir -p "$out/bin"
+          cat > "$out/bin/host-exec" <<'EOF'
+          #!/bin/sh
+          set -eu
+          
+          if [ "$#" -eq 0 ]; then
+            echo "usage: host-exec <command> [args...]" >&2
+            exit 64
+          fi
+          
+          if [ "$(id -u)" -ne 0 ]; then
+            echo "host-exec requires root inside the container (for example: --user 0:0)." >&2
+            exit 1
+          fi
+          
+          for chroot_bin in /host/usr/sbin/chroot /host/usr/bin/chroot /host/bin/chroot; do
+            if [ -x "$chroot_bin" ]; then
+              exec "$chroot_bin" /host "$@"
+            fi
+          done
+          
+          echo "host-exec requires the host root mounted at /host and a usable chroot binary on the host." >&2
+          exit 1
+          EOF
+          chmod +x "$out/bin/host-exec"
+          
+          cat > "$out/bin/host-shell" <<'EOF'
+          #!/bin/sh
+          set -eu
+          exec /bin/host-exec /bin/sh "$@"
+          EOF
+          chmod +x "$out/bin/host-shell"
+        '';
       copilotCliFor =
         system:
         import ./nix/copilot-cli.nix {
@@ -92,12 +131,15 @@
           pkgs = pkgsFor system;
           copilotCli = copilotCliFor system;
           entrypoint = entrypointFor system;
+          hostHelpers = hostHelpersFor system;
           dockerImage = pkgs.dockerTools.buildLayeredImage {
             name = "copilot-cli";
             tag = "latest";
             contents = [
               copilotCli
               entrypoint
+              hostHelpers
+              pkgs.busybox
               pkgs.cacert
               pkgs.glibc
               pkgs.stdenv.cc.cc.lib
@@ -119,8 +161,10 @@
               Entrypoint = [ "/bin/copilot-entrypoint" ];
               Env = [
                 "HOME=/var/lib/copilot"
+                "HOST_ROOT=/host"
                 "LD_LIBRARY_PATH=/lib"
                 "PATH=/bin"
+                "SHELL=/bin/sh"
                 "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
                 "XDG_CACHE_HOME=/var/lib/copilot/.cache"

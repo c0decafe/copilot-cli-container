@@ -8,6 +8,8 @@ There is intentionally no `Dockerfile` here. The image is built directly with `n
 
 - The official `copilot-cli` release binary, pinned by version and hash
 - A tiny compiled TTY-aware entrypoint
+- A tiny BusyBox shell for smoke tests and container-side command execution
+- `host-exec` and `host-shell` helpers for host-tool access when `/host` is mounted
 - CA certificates
 - Only the runtime libraries needed by the Copilot binary
 
@@ -68,6 +70,20 @@ docker run --rm -it \
   ghcr.io/c0decafe/copilot-cli-container:latest
 ```
 
+Quick persistence smoke test:
+
+```bash
+docker run --rm \
+  --mount source=copilot-home,target=/var/lib/copilot \
+  ghcr.io/c0decafe/copilot-cli-container:latest \
+  sh -lc 'echo persisted > "$HOME"/.copilot-smoke && cat "$HOME"/.copilot-smoke'
+
+docker run --rm \
+  --mount source=copilot-home,target=/var/lib/copilot \
+  ghcr.io/c0decafe/copilot-cli-container:latest \
+  sh -lc 'cat "$HOME"/.copilot-smoke'
+```
+
 If you prefer state on the host filesystem so you can inspect or back it up directly, bind mount a host directory instead:
 
 ```bash
@@ -88,12 +104,25 @@ If you want files written in `/workspace` to match your host UID/GID exactly on 
 
 to the `docker run` examples above.
 
+Quick ownership smoke test:
+
+```bash
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",target=/workspace \
+  -w /workspace \
+  ghcr.io/c0decafe/copilot-cli-container:latest \
+  sh -lc 'echo owned-by-host-user > /workspace/.copilot-owner-test && ls -ln /workspace/.copilot-owner-test'
+rm -f .copilot-owner-test
+```
+
 ## Full host diagnosis mode
 
-If you want the most invasive host-diagnostic mode, run the container with the Docker socket, host networking, and a read-only mount of the host filesystem:
+If you want the most invasive host-diagnostic mode, run the container as root with the Docker socket, host networking, and a read-only mount of the host filesystem:
 
 ```bash
 docker run --rm -it \
+  --user 0:0 \
   --mount source=copilot-home,target=/var/lib/copilot \
   --mount type=bind,src="$PWD",target=/workspace \
   --mount type=bind,src=/var/run/docker.sock,target=/var/run/docker.sock \
@@ -107,9 +136,39 @@ This is a high-trust mode. Mounting `/var/run/docker.sock` gives the container c
 
 Host networking is mainly relevant on Linux. On Docker Desktop, host-network behavior differs from a native Linux engine.
 
-If you want to inspect only a smaller host surface, replace `/:/host:readonly` with narrower read-only mounts such as `/var/log` or `/etc`.
+In this mode:
 
-The published image intentionally stays lean and does **not** include the `docker` CLI binary itself. The socket mount is therefore the access path; if you want to run `docker ...` commands from inside the container, use your own diagnostic variant that adds a compatible Docker client.
+- `sh` is available inside the container for local smoke tests
+- `host-exec <command> ...` runs a command inside `chroot /host`
+- `host-shell` opens a shell rooted in the host filesystem
+
+Host tool smoke test:
+
+```bash
+docker run --rm \
+  --user 0:0 \
+  --mount type=bind,src=/,target=/host,readonly \
+  --mount type=bind,src=/var/run/docker.sock,target=/var/run/docker.sock \
+  --network host \
+  ghcr.io/c0decafe/copilot-cli-container:latest \
+  host-exec /bin/sh -lc 'git --version; docker --version'
+```
+
+If you want an immediate host shell instead of starting Copilot first:
+
+```bash
+docker run --rm -it \
+  --user 0:0 \
+  --mount type=bind,src=/,target=/host,readonly \
+  --mount type=bind,src=/var/run/docker.sock,target=/var/run/docker.sock \
+  --network host \
+  ghcr.io/c0decafe/copilot-cli-container:latest \
+  host-shell
+```
+
+If you want to inspect only a smaller host surface, replace `/:/host:readonly` with narrower read-only mounts such as `/var/log` or `/etc`. In that case `host-exec` will no longer work, because it needs the full host root available at `/host`.
+
+The published image intentionally stays lean. Instead of bundling a second copy of large host-oriented tooling, it uses the host's own binaries through `host-exec` when you explicitly mount the host root.
 
 ## Authentication
 
