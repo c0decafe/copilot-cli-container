@@ -68,6 +68,8 @@ The image now ships the most useful day-2 tools directly so it can work in envir
 - `ps`, `pgrep`
 - `ip`, `ss`
 
+The bundled Docker tool is the core `docker` CLI only. `docker buildx` and `docker compose` are intentionally omitted to keep the image smaller and focused on diagnostic/container-operator workflows.
+
 Smoke test the bundled tools:
 
 ```bash

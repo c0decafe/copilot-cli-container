@@ -37,15 +37,60 @@
               copilot-cli:latest "$@"
           '')
         ];
+      dockerCliFor =
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        (pkgs.docker-client.override {
+          buildxSupport = false;
+          composeSupport = false;
+        }).overrideAttrs
+          (_: {
+            doInstallCheck = false;
+          });
+      gitFor =
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        (pkgs.gitMinimal.override {
+          nlsSupport = false;
+        }).overrideAttrs
+          (old: {
+            doInstallCheck = false;
+            postFixup = (old.postFixup or "") + ''
+              rm -rf $out/share/locale $out/share/bash-completion $out/share/git/contrib $out/share/git-gui $out/share/gitk $out/share/git-core/contrib
+              rm -f $out/bin/git-cvsserver $out/bin/git-jump $out/bin/scalar
+            '';
+          });
+      opensshFor =
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        (pkgs.openssh.override {
+          withSecurityKey = false;
+          withLdns = false;
+          withPAM = false;
+        }).overrideAttrs
+          (old: {
+            doInstallCheck = false;
+            postFixup = (old.postFixup or "") + ''
+              rm -f $out/bin/sshd
+              rm -f $out/etc/ssh/moduli $out/etc/ssh/sshd_config
+              rm -f $out/libexec/sftp-server $out/libexec/sshd-auth $out/libexec/sshd-session
+            '';
+          });
       bundledToolsFor =
         system:
         let
           pkgs = pkgsFor system;
         in
         [
-          pkgs.gitMinimal
-          pkgs.openssh
-          pkgs."docker-client"
+          (gitFor system)
+          (opensshFor system)
+          (dockerCliFor system)
           pkgs.curl
           pkgs.jq
           pkgs.procps
