@@ -88,6 +88,36 @@ If you want files written in `/workspace` to match your host UID/GID exactly on 
 
 to the `docker run` examples above.
 
+## Host diagnosis with the Docker socket
+
+If you want to give the Copilot session visibility into the host Docker daemon for deeper diagnosis, mount the Docker socket explicitly:
+
+```bash
+docker run --rm -it \
+  --mount source=copilot-home,target=/var/lib/copilot \
+  --mount type=bind,src="$PWD",target=/workspace \
+  --mount type=bind,src=/var/run/docker.sock,target=/var/run/docker.sock \
+  -w /workspace \
+  ghcr.io/c0decafe/copilot-cli-container:latest
+```
+
+This is a high-trust mode. Mounting `/var/run/docker.sock` gives the container control over the host Docker daemon, which is effectively host-level access. Only use this on a machine and repository you trust.
+
+You can extend that pattern with additional read-only bind mounts for host paths you want Copilot to inspect, for example logs or configuration directories:
+
+```bash
+docker run --rm -it \
+  --mount source=copilot-home,target=/var/lib/copilot \
+  --mount type=bind,src="$PWD",target=/workspace \
+  --mount type=bind,src=/var/run/docker.sock,target=/var/run/docker.sock \
+  --mount type=bind,src=/var/log,target=/host/var/log,readonly \
+  --mount type=bind,src=/etc,target=/host/etc,readonly \
+  -w /workspace \
+  ghcr.io/c0decafe/copilot-cli-container:latest
+```
+
+The published image intentionally stays lean and does **not** include the `docker` CLI binary itself. The socket mount is therefore the access path; if you want to run `docker ...` commands from inside the container, use your own diagnostic variant that adds a compatible Docker client.
+
 ## Authentication
 
 If you do not provide a token, start the container interactively and run `/login` on first launch. With `/var/lib/copilot` mounted, that local state survives container removal.
