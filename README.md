@@ -7,9 +7,9 @@ There is intentionally no `Dockerfile` here. The image is built directly with `n
 ## What is included
 
 - The official `copilot-cli` release binary, pinned by version and hash
-- A tiny TTY-aware entrypoint
+- A tiny compiled TTY-aware entrypoint
 - CA certificates
-- A minimal `/bin/sh`
+- Only the runtime libraries needed by the Copilot binary
 
 The image defaults to:
 
