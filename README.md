@@ -1,6 +1,6 @@
 # copilot-cli-container
 
-A minimal GitHub Copilot CLI container built with Nix and `devenv`.
+A minimal GitHub Copilot CLI container built with Nix.
 
 There is intentionally no `Dockerfile` here. The image is built directly with `nixpkgs.dockerTools`, which keeps the runtime closure tight, reproducible, and fast to start.
 
@@ -88,33 +88,26 @@ If you want files written in `/workspace` to match your host UID/GID exactly on 
 
 to the `docker run` examples above.
 
-## Host diagnosis with the Docker socket
+## Full host diagnosis mode
 
-If you want to give the Copilot session visibility into the host Docker daemon for deeper diagnosis, mount the Docker socket explicitly:
-
-```bash
-docker run --rm -it \
-  --mount source=copilot-home,target=/var/lib/copilot \
-  --mount type=bind,src="$PWD",target=/workspace \
-  --mount type=bind,src=/var/run/docker.sock,target=/var/run/docker.sock \
-  -w /workspace \
-  ghcr.io/c0decafe/copilot-cli-container:latest
-```
-
-This is a high-trust mode. Mounting `/var/run/docker.sock` gives the container control over the host Docker daemon, which is effectively host-level access. Only use this on a machine and repository you trust.
-
-You can extend that pattern with additional read-only bind mounts for host paths you want Copilot to inspect, for example logs or configuration directories:
+If you want the most invasive host-diagnostic mode, run the container with the Docker socket, host networking, and a read-only mount of the host filesystem:
 
 ```bash
 docker run --rm -it \
   --mount source=copilot-home,target=/var/lib/copilot \
   --mount type=bind,src="$PWD",target=/workspace \
   --mount type=bind,src=/var/run/docker.sock,target=/var/run/docker.sock \
-  --mount type=bind,src=/var/log,target=/host/var/log,readonly \
-  --mount type=bind,src=/etc,target=/host/etc,readonly \
+  --mount type=bind,src=/,target=/host,readonly \
+  --network host \
   -w /workspace \
   ghcr.io/c0decafe/copilot-cli-container:latest
 ```
+
+This is a high-trust mode. Mounting `/var/run/docker.sock` gives the container control over the host Docker daemon, which is effectively host-level access. `--network host` also places the container directly on the host network stack. Only use this on a machine and repository you trust.
+
+Host networking is mainly relevant on Linux. On Docker Desktop, host-network behavior differs from a native Linux engine.
+
+If you want to inspect only a smaller host surface, replace `/:/host:readonly` with narrower read-only mounts such as `/var/log` or `/etc`.
 
 The published image intentionally stays lean and does **not** include the `docker` CLI binary itself. The socket mount is therefore the access path; if you want to run `docker ...` commands from inside the container, use your own diagnostic variant that adds a compatible Docker client.
 
@@ -137,16 +130,10 @@ docker run --rm -it \
 
 ## Local development shell
 
-Use `devenv` to get the same pinned `copilot` binary locally:
+Use the flake dev shell to get the same pinned `copilot` binary locally:
 
 ```bash
-devenv shell
-```
-
-If you prefer to enter the flake shell directly through Nix, use:
-
-```bash
-nix develop --accept-flake-config --no-pure-eval
+nix develop
 ```
 
 Inside the shell:

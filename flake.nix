@@ -1,20 +1,11 @@
 {
-  description = "Lean GitHub Copilot CLI container built with Nix and devenv";
+  description = "Lean GitHub Copilot CLI container built with Nix";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
-    devenv.url = "github:cachix/devenv";
-    devenv.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  nixConfig = {
-    extra-substituters = [ "https://devenv.cachix.org" ];
-    extra-trusted-public-keys = [
-      "devenv.cachix.org-1:w1cLUi8dv3hnoSPGAuibQv+f9TZLr6cv/Hm9XgU50cw="
-    ];
-  };
-
-  outputs = inputs@{ self, nixpkgs, devenv, ... }:
+  outputs = { nixpkgs, ... }:
     let
       lib = nixpkgs.lib;
       systems = [
@@ -23,6 +14,29 @@
       ];
       forAllSystems = lib.genAttrs systems;
       pkgsFor = system: import nixpkgs { inherit system; };
+      shellHelpersFor =
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        [
+          (pkgs.writeShellScriptBin "buildImage" ''
+            set -eu
+            exec nix build .#dockerImage "$@"
+          '')
+          (pkgs.writeShellScriptBin "loadImage" ''
+            set -eu
+            docker load < result
+          '')
+          (pkgs.writeShellScriptBin "runImage" ''
+            set -eu
+            docker run --rm -it \
+              -v "$PWD:/workspace" \
+              -w /workspace \
+              -v copilot-state:/var/lib/copilot \
+              copilot-cli:latest "$@"
+          '')
+        ];
       copilotCliFor =
         system:
         import ./nix/copilot-cli.nix {
@@ -141,11 +155,19 @@
         system:
         let
           pkgs = pkgsFor system;
+          copilotCli = copilotCliFor system;
         in
         {
-          default = devenv.lib.mkShell {
-            inherit inputs pkgs;
-            modules = [ ./devenv.nix ];
+          default = pkgs.mkShell {
+            packages = [ copilotCli ] ++ shellHelpersFor system;
+
+            shellHook = ''
+              echo "nix develop ready:"
+              echo "  - copilot      -> run the locally packaged CLI"
+              echo "  - buildImage   -> build the Docker image tarball"
+              echo "  - loadImage    -> load ./result into Docker"
+              echo "  - runImage     -> run the image against the current directory"
+            '';
           };
         }
       );
