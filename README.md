@@ -8,7 +8,14 @@ There is intentionally no `Dockerfile` here. The image is built directly with `n
 
 - The official `copilot-cli` release binary, pinned by version and hash
 - A tiny compiled TTY-aware entrypoint
-- A tiny BusyBox shell for smoke tests and container-side command execution
+- A compact built-in operator toolset for container-only environments:
+  - BusyBox `sh` and core utilities
+  - `git`
+  - OpenSSH client tools (`ssh`, `scp`, `sftp`, `ssh-keyscan`, `ssh-keygen`)
+  - `docker`
+  - `curl`
+  - `jq`
+  - process and networking tools such as `ps`, `pgrep`, `ip`, and `ss`
 - `host-exec` and `host-shell` helpers for host-tool access when `/host` is mounted
 - CA certificates
 - Only the runtime libraries needed by the Copilot binary
@@ -48,6 +55,36 @@ Direct command execution:
 docker run --rm ghcr.io/c0decafe/copilot-cli-container:latest copilot --version
 ```
 
+## Built-in toolset for container-only environments
+
+The image now ships the most useful day-2 tools directly so it can work in environments where you are only allowed to run containers:
+
+- `sh`
+- `git`
+- `ssh`, `scp`, `sftp`, `ssh-keyscan`, `ssh-keygen`
+- `docker`
+- `curl`
+- `jq`
+- `ps`, `pgrep`
+- `ip`, `ss`
+
+Smoke test the bundled tools:
+
+```bash
+docker run --rm ghcr.io/c0decafe/copilot-cli-container:latest \
+  sh -lc 'git --version && docker --version && ssh -V 2>&1 | head -n1 && curl --version | head -n1 && jq --version && ps --version | head -n1 && pgrep --version | head -n1 && ip -Version 2>&1 | head -n1 && ss -V 2>&1 | head -n1'
+```
+
+If you want the built-in Docker CLI to talk to the host daemon, mount the socket:
+
+```bash
+docker run --rm \
+  --user 0:0 \
+  --mount type=bind,src=/var/run/docker.sock,target=/var/run/docker.sock \
+  ghcr.io/c0decafe/copilot-cli-container:latest \
+  docker version --format '{{.Server.Version}}'
+```
+
 ## Persist config, auth, and local Copilot state
 
 The image is wired so a single mount point persists the important user state:
@@ -56,7 +93,9 @@ The image is wired so a single mount point persists the important user state:
 - `XDG_CONFIG_HOME=/var/lib/copilot/.config`
 - `XDG_CACHE_HOME=/var/lib/copilot/.cache`
 
-In practice, mounting `/var/lib/copilot` preserves Copilot's home-directory and XDG-backed files across runs, including things such as `~/.copilot`, cached state, trusted-directory decisions, and other local CLI state.
+In practice, mounting `/var/lib/copilot` preserves Copilot's home-directory and XDG-backed files across runs, including things such as `~/.copilot`, `~/.ssh`, `~/.docker`, cached state, trusted-directory decisions, and other local CLI state.
+
+The launcher bootstraps missing `~/.config`, `~/.cache`, `~/.docker`, and `~/.ssh` directories on startup, so a fresh empty bind mount works without pre-seeding the directory tree.
 
 Recommended: use a named Docker volume for Copilot state, and a bind mount for the repository you want to work in:
 
@@ -138,9 +177,9 @@ Host networking is mainly relevant on Linux. On Docker Desktop, host-network beh
 
 In this mode:
 
-- `sh` is available inside the container for local smoke tests
+- the bundled `docker`, `git`, `ssh`, `curl`, and `jq` tools are available directly
 - `host-exec <command> ...` runs a command inside `chroot /host`
-- `host-shell` opens a shell rooted in the host filesystem
+- `host-shell` opens a shell rooted in the host filesystem when you specifically need the host's own binaries and library layout
 
 Host tool smoke test:
 
@@ -168,7 +207,7 @@ docker run --rm -it \
 
 If you want to inspect only a smaller host surface, replace `/:/host:readonly` with narrower read-only mounts such as `/var/log` or `/etc`. In that case `host-exec` will no longer work, because it needs the full host root available at `/host`.
 
-The published image intentionally stays lean. Instead of bundling a second copy of large host-oriented tooling, it uses the host's own binaries through `host-exec` when you explicitly mount the host root.
+Use the bundled tools by default. Reach for `host-exec` only when you specifically need the host's own binaries, libraries, or filesystem context.
 
 ## Authentication
 

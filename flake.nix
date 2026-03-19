@@ -37,6 +37,21 @@
               copilot-cli:latest "$@"
           '')
         ];
+      bundledToolsFor =
+        system:
+        let
+          pkgs = pkgsFor system;
+        in
+        [
+          pkgs.gitMinimal
+          pkgs.openssh
+          pkgs."docker-client"
+          pkgs.curl
+          pkgs.jq
+          pkgs.procps
+          pkgs.iproute2
+          pkgs.busybox
+        ];
       hostHelpersFor =
         system:
         let
@@ -90,10 +105,54 @@
         pkgs.runCommandCC "copilot-entrypoint" { } ''
           mkdir -p "$out/bin"
           cat > copilot-entrypoint.c <<'EOF'
+          #include <errno.h>
+          #include <limits.h>
+          #include <stdlib.h>
           #include <stdio.h>
           #include <string.h>
+          #include <sys/stat.h>
           #include <unistd.h>
-          #include <errno.h>
+
+          static int ensure_dir(const char *path, mode_t mode) {
+            if (path == NULL || path[0] == '\0') {
+              return 0;
+            }
+
+            if (mkdir(path, mode) == 0 || errno == EEXIST) {
+              return 0;
+            }
+
+            perror(path);
+            return -1;
+          }
+
+          static int ensure_runtime_dirs(void) {
+            const char *home = getenv("HOME");
+            const char *cache = getenv("XDG_CACHE_HOME");
+            const char *config = getenv("XDG_CONFIG_HOME");
+            char docker_dir[PATH_MAX];
+            char ssh_dir[PATH_MAX];
+
+            if (ensure_dir(home, 0755) < 0 || ensure_dir(cache, 0755) < 0 || ensure_dir(config, 0755) < 0) {
+              return -1;
+            }
+
+            if (home == NULL || home[0] == '\0') {
+              return 0;
+            }
+
+            if (snprintf(docker_dir, sizeof(docker_dir), "%s/.docker", home) >= (int)sizeof(docker_dir) ||
+                snprintf(ssh_dir, sizeof(ssh_dir), "%s/.ssh", home) >= (int)sizeof(ssh_dir)) {
+              fputs("HOME path is too long.\n", stderr);
+              return -1;
+            }
+
+            if (ensure_dir(docker_dir, 0700) < 0 || ensure_dir(ssh_dir, 0700) < 0) {
+              return -1;
+            }
+
+            return 0;
+          }
 
           static int run_default(void) {
             char *argv[] = { "/bin/copilot", NULL };
@@ -103,6 +162,10 @@
           }
 
           int main(int argc, char **argv) {
+            if (ensure_runtime_dirs() < 0) {
+              return 1;
+            }
+
             if (argc > 1) {
               execvp(argv[1], argv + 1);
               perror("exec command");
@@ -131,6 +194,7 @@
           pkgs = pkgsFor system;
           copilotCli = copilotCliFor system;
           entrypoint = entrypointFor system;
+          bundledTools = bundledToolsFor system;
           hostHelpers = hostHelpersFor system;
           dockerImage = pkgs.dockerTools.buildLayeredImage {
             name = "copilot-cli";
@@ -139,21 +203,25 @@
               copilotCli
               entrypoint
               hostHelpers
-              pkgs.busybox
+            ] ++ bundledTools ++ [
               pkgs.cacert
               pkgs.glibc
               pkgs.stdenv.cc.cc.lib
             ];
             extraCommands = ''
-              mkdir -p ./etc ./tmp ./workspace ./var/lib/copilot/.cache ./var/lib/copilot/.config
+              mkdir -p ./etc ./tmp ./workspace ./var/lib/copilot/.cache ./var/lib/copilot/.config ./var/lib/copilot/.docker ./var/lib/copilot/.ssh
               chmod 1777 ./tmp
               chmod 0777 ./workspace ./var/lib/copilot ./var/lib/copilot/.cache ./var/lib/copilot/.config
+              chmod 0700 ./var/lib/copilot/.docker ./var/lib/copilot/.ssh
               cat > ./etc/passwd <<'EOF'
               copilot:x:1000:1000:GitHub Copilot CLI:/var/lib/copilot:/bin/copilot
               EOF
               cat > ./etc/group <<'EOF'
               copilot:x:1000:
               EOF
+            '';
+            fakeRootCommands = ''
+              chown 1000:1000 ./var/lib/copilot ./var/lib/copilot/.cache ./var/lib/copilot/.config ./var/lib/copilot/.docker ./var/lib/copilot/.ssh
             '';
             config = {
               User = "1000:1000";
